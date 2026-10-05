@@ -42,6 +42,9 @@ importers:
       standard-version:
         specifier: ^9.5.0
         version: 9.5.0
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
 
 packages:
 
