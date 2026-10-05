@@ -1,0 +1,86 @@
+{
+  "name": "@tanstack-start/theme",
+  "version": "0.0.1",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "import": "./src/server.ts",
+      "default": "./src/server.ts"
+    }
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "prepare": "husky",
+    "release": "standard-version"
+  },"standard-version": {
+    "types": [
+      {
+        "type": "feat",
+        "section": "✨ Features"
+      },
+      {
+        "type": "fix",
+        "section": "🐛 Bug Fixes"
+      },
+      {
+        "type": "perf",
+        "section": "⚡ Performance Improvements"
+      },
+      {
+        "type": "refactor",
+        "section": "♻️ Code Refactor"
+      },
+      {
+        "type": "style",
+        "section": "💄 Styles"
+      },
+      {
+        "type": "build",
+        "section": "📦 Build System",
+        "hidden": true
+      },
+      {
+        "type": "docs",
+        "section": "📝 Documentation",
+        "hidden": true
+      },
+      {
+        "type": "chore",
+        "section": "🧹 Chores",
+        "hidden": true
+      },
+      {
+        "type": "test",
+        "section": "✅ Tests",
+        "hidden": true
+      }
+    ]
+  },
+  "peerDependencies": {
+    "@tanstack/react-start": "*",
+    "@tanstack/react-store": "*",
+    "react": ">=18 || >=19",
+    "zod": ">=4"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "@commitlint/types": "^21.2.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "husky": "^9.1.7",
+    "standard-version": "^9.5.0"
+  }
+}
