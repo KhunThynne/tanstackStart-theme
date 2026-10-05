@@ -1,13 +1,11 @@
 import { createTheme } from ".";
 
 export * from "./components";
-export { createTheme } from ".;
-export type { CreateThemeOptions, InferTheme } from "./index.ts";
-export type { ThemeStoreState, ThemePreference } from "./type";
+export { createTheme } from "../../src/index.ts";
 
 const appTheme = createTheme({
   defaultTheme: "system",
-  themes: ["light", "dark", "system"],
+  themes: ["light", "dark"],
 });
 
 export const {

@@ -8,7 +8,7 @@ export type Theme = z.infer<typeof ThemeSchema>;
 
 export type ThemePreference = Theme;
 
-export type ThemeStoreState = GenericThemeStoreState<Theme>;
+export type ThemeStoreState = GenericThemeStoreState<Theme, Theme>;
 
 export type InferTheme<TController> = TController extends {
   themes: readonly (infer TTheme)[];

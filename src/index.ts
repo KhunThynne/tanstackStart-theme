@@ -1,76 +1,114 @@
 import { createStore, useSelector } from "@tanstack/react-store";
 import type { PropsWithChildren, ReactNode } from "react";
-import { useEffect, useLayoutEffect } from "react";
+import { createElement, useEffect, useLayoutEffect } from "react";
 
 import { setThemeServerFn } from "./server";
 
 export type InferTheme<TController> = TController extends {
-  themes: readonly (infer TTheme)[];
+  $infer: { Theme: infer TTheme };
 }
   ? TTheme
   : never;
 
 export type ThemeTuple = readonly [string, ...string[]];
 
-export interface CreateThemeOptions<TThemes extends ThemeTuple> {
-  /** User-selectable theme class names. */
+export type SelectableTheme<
+  TThemes extends ThemeTuple,
+  TSystemPreference extends string,
+> = TThemes[number] | TSystemPreference;
+
+export interface CreateThemeOptions<
+  TThemes extends ThemeTuple,
+  TSystemPreference extends string = "system",
+> {
+  /** Real CSS theme classes (for example: ['light', 'dark']). */
   themes: TThemes;
-  /** Initial theme used before the server/router context reaches the provider. */
-  defaultTheme: TThemes[number];
+  /** Preference key that follows the user agent/device color scheme. */
+  systemPreference?: TSystemPreference;
+  /** Initial selected preference used before server/router context reaches the provider. */
+  defaultTheme: NoInfer<SelectableTheme<TThemes, TSystemPreference>>;
+  /** Optional cookie/localStorage key used by the default TanStack Start cookie persistence. */
+  storageKey?: string;
   /** Optional persistence hook for user actions. Do not call during hydration. */
-  persistTheme?: (theme: TThemes[number]) => void | Promise<void>;
+  persistTheme?: (
+    theme: SelectableTheme<TThemes, TSystemPreference>
+  ) => void | Promise<void>;
 }
 
-export interface ThemeStoreState<TTheme extends string> {
-  theme: TTheme;
+export interface ThemeStoreState<
+  TSelectableTheme extends string,
+  TResolvedTheme extends string,
+> {
+  /** User-selected preference (can be the system preference key). */
+  theme: TSelectableTheme;
+  /** Actual CSS theme class currently applied for Tailwind/shadcn variants. */
+  resolvedTheme: TResolvedTheme;
 }
 
-export interface ThemeController<TTheme extends string> {
-  /** Type-only inference helpers for consumers. */
+export interface ThemeController<
+  TThemes extends ThemeTuple,
+  TSystemPreference extends string = "system",
+> {
   $infer: {
-    Theme: TTheme;
+    Theme: SelectableTheme<TThemes, TSystemPreference>;
+    ResolvedTheme: TThemes[number];
+    SystemPreference: TSystemPreference;
   };
-  /** Applies a theme class and related metadata to `document.documentElement`. */
-  applyTheme: (theme: TTheme) => void;
-  /** Utility for generating CSS/Tailwind condition helpers from theme names. */
-  createThemeConditions: typeof createThemeConditions<TTheme>;
-  /** Theme used when persisted input is missing or invalid. */
-  defaultTheme: TTheme;
-  /** Syncs a server/router theme into the store and DOM without persistence. */
-  hydrateTheme: (theme: TTheme) => void;
-  /** Runtime guard for checking whether a string belongs to the configured themes. */
-  isTheme: (value: string) => value is TTheme;
-  /** Normalizes unknown/raw input into a configured theme, falling back to `defaultTheme`. */
-  parseTheme: (value: unknown) => TTheme;
-  /** User action helper: update store/DOM, then persist through TanStack Start. */
-  setTheme: (theme: TTheme) => void;
-  /** Generated selectors/custom-variant snippets for the configured themes. */
-  themeConditions: Array<ThemeCondition<TTheme>>;
-  /** Underlying TanStack Store instance. Prefer `useTheme()` in React UI. */
-  themeStore: ReturnType<typeof createStore<ThemeStoreState<TTheme>>>;
-  /** Configured theme class names. */
-  themes: readonly TTheme[];
-  /** React bridge from TanStack Start router context into the theme store. */
-  ThemeProvider: (props: PropsWithChildren<{ theme: TTheme }>) => ReactNode;
-  /** React hook for reading and setting the current theme. */
-  useTheme: () => { setTheme: (theme: TTheme) => void; theme: TTheme };
+  applyTheme: (theme: SelectableTheme<TThemes, TSystemPreference>) => void;
+  createThemeConditions: (
+    themes: readonly TThemes[number][]
+  ) => Array<ThemeCondition<TThemes[number]>>;
+  defaultTheme: SelectableTheme<TThemes, TSystemPreference>;
+  getThemeInitScript: (
+    theme: SelectableTheme<TThemes, TSystemPreference>
+  ) => string;
+  hydrateTheme: (theme: SelectableTheme<TThemes, TSystemPreference>) => void;
+  isTheme: (
+    value: string
+  ) => value is SelectableTheme<TThemes, TSystemPreference>;
+  isResolvedTheme: (value: string) => value is TThemes[number];
+  parseTheme: (value: unknown) => SelectableTheme<TThemes, TSystemPreference>;
+  resolveTheme: (
+    theme: SelectableTheme<TThemes, TSystemPreference>
+  ) => TThemes[number];
+  setTheme: (theme: SelectableTheme<TThemes, TSystemPreference>) => void;
+  systemPreference: TSystemPreference;
+  themeConditions: Array<ThemeCondition<TThemes[number]>>;
+  themeStore: ReturnType<
+    typeof createStore<
+      ThemeStoreState<SelectableTheme<TThemes, TSystemPreference>, TThemes[number]>
+    >
+  >;
+  themes: TThemes;
+  ThemeInitScript: (props: {
+    nonce?: string;
+    theme: SelectableTheme<TThemes, TSystemPreference>;
+  }) => ReactNode;
+  ThemeProvider: (
+    props: PropsWithChildren<{
+      syncSystemPreference?: boolean;
+      theme: SelectableTheme<TThemes, TSystemPreference>;
+    }>
+  ) => ReactNode;
+  useTheme: () => {
+    resolvedTheme: TThemes[number];
+    setTheme: (theme: SelectableTheme<TThemes, TSystemPreference>) => void;
+    theme: SelectableTheme<TThemes, TSystemPreference>;
+  };
 }
 
-export interface ThemeCondition<TTheme extends string> {
-  /** Theme class / token name. */
-  theme: TTheme;
-  /** CSS selector for the theme root and descendants. */
+export interface ThemeCondition<TThemeClass extends string> {
+  theme: TThemeClass;
   selector: string;
-  /** Tailwind v4 custom-variant declaration for this theme. */
   variant: string;
-  /** Attribute selector variant if consumers prefer data attributes over classes. */
   dataVariant: string;
 }
+
+const DEFAULT_STORAGE_KEY = "_preferred-theme";
 
 const useIsomorphicLayoutEffect =
   typeof document === "undefined" ? useEffect : useLayoutEffect;
 
-/** Creates CSS/Tailwind condition helpers from the configured theme names. */
 export function createThemeConditions<const TTheme extends string>(
   themes: readonly TTheme[]
 ): Array<ThemeCondition<TTheme>> {
@@ -78,152 +116,287 @@ export function createThemeConditions<const TTheme extends string>(
     theme,
     selector: `&:where(.${theme}, .${theme} *)`,
     variant: `@custom-variant theme-${theme} (&:where(.${theme}, .${theme} *));`,
-    dataVariant: `@custom-variant theme-${theme} (&:where([data-theme="${theme}"], [data-theme="${theme}"] *));`,
+    dataVariant: `@custom-variant theme-${theme} (&:where([data-resolved-theme="${theme}"], [data-resolved-theme="${theme}"] *));`,
   }));
 }
 
-/**
- * Creates a TanStack Start theme controller.
- *
- * A theme is treated as a CSS class token and is applied directly to
- * `document.documentElement`. The controller does not resolve `system` into
- * `light`/`dark`; CSS and Tailwind variants own what each theme class means.
- *
- * @returns A typed controller containing:
- * - `ThemeProvider` — React bridge from TanStack Start router context into the theme store.
- * - `useTheme` — hook returning `{ theme, setTheme }` for UI controls.
- * - `setTheme` — user action helper that applies the class and persists through TanStack Start.
- * - `hydrateTheme` — non-persisting sync helper for advanced router/lifecycle usage.
- * - `parseTheme` — normalizes raw cookie/server values back into the configured theme union.
- * - `isTheme` — runtime type guard for configured theme names.
- * - `themeConditions` — generated CSS/Tailwind selector snippets for every theme.
- * - `applyTheme` — low-level DOM applier for `<html class="theme" data-theme="theme">`.
- * - `themeStore` — underlying TanStack Store instance.
- * - `themes` and `defaultTheme` — the configured theme tuple and fallback value.
- * - `$infer.Theme` — type-only helper for extracting the configured theme union.
- *
- * `ThemeProvider` syncs server/router context with `hydrateTheme()` from an
- * isomorphic layout effect. It never calls `setTheme()` for incoming context,
- * so server state does not write back to the cookie and the client store does
- * not become the initial source of truth.
- */
-export function createTheme<const TThemes extends ThemeTuple>({
+export function createTheme<
+  const TThemes extends ThemeTuple,
+  const TSystemPreference extends string = "system",
+>({
   defaultTheme,
   persistTheme,
+  storageKey = DEFAULT_STORAGE_KEY,
+  systemPreference = "system" as TSystemPreference,
   themes,
-}: CreateThemeOptions<TThemes>): ThemeController<TThemes[number]> {
-  type TTheme = TThemes[number];
+}: CreateThemeOptions<TThemes, TSystemPreference>): ThemeController<
+  TThemes,
+  TSystemPreference
+> {
+  type TResolvedTheme = TThemes[number];
+  type TSelectableTheme = SelectableTheme<TThemes, TSystemPreference>;
 
-  const themeStore = createStore<ThemeStoreState<TTheme>>({
+  const allThemeValues = [
+    ...themes,
+    systemPreference,
+  ] as readonly TSelectableTheme[];
+  const defaultResolvedTheme = resolveThemeValue(defaultTheme);
+  const themeStore = createStore<
+    ThemeStoreState<TSelectableTheme, TResolvedTheme>
+  >({
+    resolvedTheme: defaultResolvedTheme,
     theme: defaultTheme,
   });
   const themeConditions = createThemeConditions(themes);
 
-  function isTheme(value: string): value is TTheme {
+  function isResolvedTheme(value: string): value is TResolvedTheme {
     return (themes as readonly string[]).includes(value);
   }
 
-  function parseTheme(value: unknown): TTheme {
+  function isTheme(value: string): value is TSelectableTheme {
+    return isResolvedTheme(value) || value === systemPreference;
+  }
+
+  function parseTheme(value: unknown): TSelectableTheme {
     return typeof value === "string" && isTheme(value) ? value : defaultTheme;
   }
 
-  function applyTheme(theme: TTheme) {
-    if (typeof document === "undefined") return;
+  function getBrowserResolvedTheme(): TResolvedTheme {
+    if (typeof window !== "undefined") {
+      const prefersDark = window.matchMedia?.(
+        "(prefers-color-scheme: dark)"
+      ).matches;
 
-    const root = document.documentElement;
-    root.classList.remove(...(themes as unknown as string[]));
+      if (prefersDark && isResolvedTheme("dark")) {
+        return "dark" as TResolvedTheme;
+      }
 
-    const previousTheme = root.getAttribute("data-applied-theme");
-    if (previousTheme) {
-      root.classList.remove(previousTheme);
+      if (!prefersDark && isResolvedTheme("light")) {
+        return "light" as TResolvedTheme;
+      }
     }
 
-    root.classList.add(theme);
-    root.dataset.theme = theme;
-    root.setAttribute("data-applied-theme", theme);
+    return themes[0];
+  }
 
-    if (theme === "dark" || theme === "light") {
-      root.style.colorScheme = theme;
+  function resolveThemeValue(theme: TSelectableTheme): TResolvedTheme {
+    if (theme === systemPreference) {
+      return getBrowserResolvedTheme();
+    }
+
+    return isResolvedTheme(theme) ? theme : themes[0];
+  }
+
+  function resolveTheme(theme: TSelectableTheme): TResolvedTheme {
+    return resolveThemeValue(parseTheme(theme));
+  }
+
+  function applyTheme(theme: TSelectableTheme) {
+    if (typeof document === "undefined") return;
+
+    const selectedTheme = parseTheme(theme);
+    const resolvedTheme = resolveTheme(selectedTheme);
+    const root = document.documentElement;
+
+    root.classList.remove(...(allThemeValues as readonly string[]));
+    root.classList.remove(...(themes as readonly string[]));
+
+    root.classList.add(selectedTheme);
+    root.classList.add(resolvedTheme);
+    root.dataset.theme = selectedTheme;
+    root.dataset.resolvedTheme = resolvedTheme;
+    root.setAttribute("data-applied-theme", selectedTheme);
+
+    if (resolvedTheme === "light" || resolvedTheme === "dark") {
+      root.style.colorScheme = resolvedTheme;
     } else {
       root.style.colorScheme = "";
     }
   }
 
-  /** Sync server/router theme into store and DOM without persistence. */
-  function hydrateTheme(theme: TTheme) {
-    if (themeStore.state.theme !== theme) {
+  function hydrateTheme(theme: TSelectableTheme) {
+    const selectedTheme = parseTheme(theme);
+    const resolvedTheme = resolveTheme(selectedTheme);
+
+    if (
+      themeStore.state.theme !== selectedTheme ||
+      themeStore.state.resolvedTheme !== resolvedTheme
+    ) {
       themeStore.setState((prev) => ({
         ...prev,
-        theme,
+        resolvedTheme,
+        theme: selectedTheme,
       }));
     }
 
-    applyTheme(theme);
+    applyTheme(selectedTheme);
   }
 
-  /** User action: update store/DOM, then persist (e.g. write to cookie). */
-  function setTheme(theme: TTheme) {
-    hydrateTheme(theme);
+  function setTheme(theme: TSelectableTheme) {
+    const selectedTheme = parseTheme(theme);
+    hydrateTheme(selectedTheme);
 
     if (typeof document !== "undefined") {
       if (persistTheme) {
-        void persistTheme(theme);
+        void persistTheme(selectedTheme);
       } else {
-        void setThemeServerFn({ data: theme });
+        void setThemeServerFn({
+          data: { storageKey, value: selectedTheme },
+        });
       }
     }
+  }
+
+  function getThemeInitScript(theme: TSelectableTheme): string {
+    const serializedTheme = JSON.stringify(parseTheme(theme));
+    const serializedDefaultTheme = JSON.stringify(defaultTheme);
+    const serializedThemes = JSON.stringify(themes);
+    const serializedAllThemeValues = JSON.stringify(allThemeValues);
+    const serializedSystemPreference = JSON.stringify(systemPreference);
+    const serializedStorageKey = JSON.stringify(storageKey);
+
+    return `;(() => {
+  try {
+    var selectedTheme = ${serializedTheme};
+    var defaultTheme = ${serializedDefaultTheme};
+    var themes = ${serializedThemes};
+    var allThemeValues = ${serializedAllThemeValues};
+    var systemPreference = ${serializedSystemPreference};
+    var storageKey = ${serializedStorageKey};
+    var root = document.documentElement;
+
+    function includes(list, value) {
+      return list.indexOf(value) !== -1;
+    }
+
+    function parseTheme(value) {
+      return typeof value === "string" && includes(allThemeValues, value)
+        ? value
+        : defaultTheme;
+    }
+
+    function resolveTheme(value) {
+      if (value === systemPreference) {
+        if (
+          window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches &&
+          includes(themes, "dark")
+        ) {
+          return "dark";
+        }
+
+        return includes(themes, "light") ? "light" : themes[0];
+      }
+
+      return includes(themes, value) ? value : themes[0];
+    }
+
+    selectedTheme = parseTheme(selectedTheme);
+    var resolvedTheme = resolveTheme(selectedTheme);
+
+    for (var i = 0; i < allThemeValues.length; i++) {
+      root.classList.remove(allThemeValues[i]);
+    }
+
+    for (var j = 0; j < themes.length; j++) {
+      root.classList.remove(themes[j]);
+    }
+
+    root.classList.add(selectedTheme);
+    root.classList.add(resolvedTheme);
+    root.setAttribute("data-theme", selectedTheme);
+    root.setAttribute("data-resolved-theme", resolvedTheme);
+    root.setAttribute("data-theme-storage-key", storageKey);
+    root.setAttribute("data-applied-theme", selectedTheme);
+
+    if (resolvedTheme === "light" || resolvedTheme === "dark") {
+      root.style.colorScheme = resolvedTheme;
+    } else {
+      root.style.colorScheme = "";
+    }
+  } catch (_) {}
+})();`;
+  }
+
+  function ThemeInitScript({
+    nonce,
+    theme,
+  }: {
+    nonce?: string;
+    theme: TSelectableTheme;
+  }) {
+    return createElement("script", {
+      dangerouslySetInnerHTML: { __html: getThemeInitScript(theme) },
+      nonce,
+      suppressHydrationWarning: true,
+    });
   }
 
   function ThemeProvider({
     children,
+    syncSystemPreference = true,
     theme,
-  }: PropsWithChildren<{ theme: TTheme }>) {
-    if (themeStore.state.theme !== theme) {
-      hydrateTheme(theme);
-    }
-
+  }: PropsWithChildren<{
+    syncSystemPreference?: boolean;
+    theme: TSelectableTheme;
+  }>) {
     useIsomorphicLayoutEffect(() => {
-      if (themeStore.state.theme !== theme) {
-        hydrateTheme(theme);
-      }
+      hydrateTheme(theme);
     }, [theme]);
+
+    useEffect(() => {
+      if (!syncSystemPreference || themeStore.state.theme !== systemPreference) {
+        return;
+      }
+
+      const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
+      if (!mediaQuery) return;
+
+      const handleChange = () => {
+        if (themeStore.state.theme === systemPreference) {
+          hydrateTheme(systemPreference);
+        }
+      };
+
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }, [syncSystemPreference, theme]);
 
     return children;
   }
+
   function useTheme() {
     const theme = useSelector(themeStore, (state) => state.theme);
+    const resolvedTheme = useSelector(
+      themeStore,
+      (state) => state.resolvedTheme
+    );
 
-    return { theme, setTheme };
+    return { resolvedTheme, setTheme, theme };
   }
 
   return {
-    /** Type-only inference helpers for consumers. */
     $infer: {} as {
-      Theme: TTheme;
+      ResolvedTheme: TResolvedTheme;
+      SystemPreference: TSystemPreference;
+      Theme: TSelectableTheme;
     },
-    /** Applies a theme class and related metadata to `document.documentElement`. */
     applyTheme,
-    /** Utility for generating CSS/Tailwind condition helpers from theme names. */
     createThemeConditions,
-    /** Theme used when persisted input is missing or invalid. */
     defaultTheme,
-    /** Syncs a server/router theme into store and DOM without persistence. */
+    getThemeInitScript,
     hydrateTheme,
-    /** Runtime guard for checking whether a string belongs to the configured themes. */
+    isResolvedTheme,
     isTheme,
-    /** Normalizes unknown/raw input into a configured theme, falling back to `defaultTheme`. */
     parseTheme,
-    /** User action helper: update store/DOM, then persist through TanStack Start. */
+    resolveTheme,
     setTheme,
-    /** Generated selectors/custom-variant snippets for the configured themes. */
+    systemPreference,
     themeConditions,
-    /** Underlying TanStack Store instance. Prefer `useTheme()` in React UI. */
     themeStore,
-    /** Configured theme class names. */
     themes,
-    /** React bridge from TanStack Start router context into the theme store. */
+    ThemeInitScript,
     ThemeProvider,
-    /** React hook for reading and setting the current theme. */
     useTheme,
   };
 }
