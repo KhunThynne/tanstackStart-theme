@@ -1,8 +1,8 @@
-import { createTheme } from "./create-theme";
+import { createTheme } from ".";
 
 export * from "./components";
-export { createTheme } from "./create-theme";
-export type { CreateThemeOptions, InferTheme } from "./create-theme";
+export { createTheme } from ".;
+export type { CreateThemeOptions, InferTheme } from "./index.ts";
 export type { ThemeStoreState, ThemePreference } from "./type";
 
 const appTheme = createTheme({
