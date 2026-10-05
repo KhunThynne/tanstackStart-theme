@@ -76,7 +76,10 @@ export interface ThemeController<
   themeConditions: Array<ThemeCondition<TThemes[number]>>;
   themeStore: ReturnType<
     typeof createStore<
-      ThemeStoreState<SelectableTheme<TThemes, TSystemPreference>, TThemes[number]>
+      ThemeStoreState<
+        SelectableTheme<TThemes, TSystemPreference>,
+        TThemes[number]
+      >
     >
   >;
   themes: TThemes;
@@ -345,7 +348,10 @@ export function createTheme<
     }, [theme]);
 
     useEffect(() => {
-      if (!syncSystemPreference || themeStore.state.theme !== systemPreference) {
+      if (
+        !syncSystemPreference ||
+        themeStore.state.theme !== systemPreference
+      ) {
         return;
       }
 

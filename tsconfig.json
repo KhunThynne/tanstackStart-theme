@@ -11,5 +11,5 @@
     "verbatimModuleSyntax": true,
     "lib": ["DOM", "DOM.Iterable", "ESNext"]
   },
-  "include": ["src", "index.ts"]
+  "include": ["src"]
 }
