@@ -1,6 +1,11 @@
-import { createStore, useSelector } from "@tanstack/react-store";
 import type { PropsWithChildren, ReactNode } from "react";
-import { createElement, useEffect, useLayoutEffect } from "react";
+import {
+  createContext,
+  createElement,
+  useCallback,
+  useContext,
+  useState,
+} from "react";
 
 import { setThemeServerFn } from "./server";
 
@@ -45,6 +50,13 @@ export interface ThemeStoreState<
   resolvedTheme: TResolvedTheme;
 }
 
+export interface ThemeContextValue<
+  TSelectableTheme extends string,
+  TResolvedTheme extends string,
+> extends ThemeStoreState<TSelectableTheme, TResolvedTheme> {
+  setTheme: (theme: TSelectableTheme) => void;
+}
+
 export interface ThemeController<
   TThemes extends ThemeTuple,
   TSystemPreference extends string = "system",
@@ -74,14 +86,12 @@ export interface ThemeController<
   setTheme: (theme: SelectableTheme<TThemes, TSystemPreference>) => void;
   systemPreference: TSystemPreference;
   themeConditions: Array<ThemeCondition<TThemes[number]>>;
-  themeStore: ReturnType<
-    typeof createStore<
-      ThemeStoreState<
-        SelectableTheme<TThemes, TSystemPreference>,
-        TThemes[number]
-      >
-    >
-  >;
+  themeStore: {
+    getState: () => ThemeStoreState<
+      SelectableTheme<TThemes, TSystemPreference>,
+      TThemes[number]
+    >;
+  };
   themes: TThemes;
   ThemeInitScript: (props: {
     nonce?: string;
@@ -109,9 +119,6 @@ export interface ThemeCondition<TThemeClass extends string> {
 
 const DEFAULT_STORAGE_KEY = "_preferred-theme";
 
-const useIsomorphicLayoutEffect =
-  typeof document === "undefined" ? useEffect : useLayoutEffect;
-
 export function createThemeConditions<const TTheme extends string>(
   themes: readonly TTheme[]
 ): Array<ThemeCondition<TTheme>> {
@@ -138,18 +145,15 @@ export function createTheme<
 > {
   type TResolvedTheme = TThemes[number];
   type TSelectableTheme = SelectableTheme<TThemes, TSystemPreference>;
-
   const allThemeValues = [
     ...themes,
     systemPreference,
   ] as readonly TSelectableTheme[];
   const defaultResolvedTheme = resolveThemeValue(defaultTheme);
-  const themeStore = createStore<
-    ThemeStoreState<TSelectableTheme, TResolvedTheme>
-  >({
-    resolvedTheme: defaultResolvedTheme,
-    theme: defaultTheme,
-  });
+  const ThemeContext = createContext<ThemeContextValue<
+    TSelectableTheme,
+    TResolvedTheme
+  > | null>(null);
   const themeConditions = createThemeConditions(themes);
 
   function isResolvedTheme(value: string): value is TResolvedTheme {
@@ -166,7 +170,7 @@ export function createTheme<
 
   function getBrowserResolvedTheme(): TResolvedTheme {
     if (typeof window !== "undefined") {
-      const prefersDark = window.matchMedia?.(
+      const prefersDark = window.matchMedia(
         "(prefers-color-scheme: dark)"
       ).matches;
 
@@ -218,36 +222,39 @@ export function createTheme<
   }
 
   function hydrateTheme(theme: TSelectableTheme) {
-    const selectedTheme = parseTheme(theme);
-    const resolvedTheme = resolveTheme(selectedTheme);
+    applyTheme(parseTheme(theme));
+  }
 
-    if (
-      themeStore.state.theme !== selectedTheme ||
-      themeStore.state.resolvedTheme !== resolvedTheme
-    ) {
-      themeStore.setState((prev) => ({
-        ...prev,
-        resolvedTheme,
-        theme: selectedTheme,
-      }));
+  function getCurrentSelectedTheme(): TSelectableTheme {
+    if (typeof document === "undefined") return defaultTheme;
+    return parseTheme(document.documentElement.dataset.theme);
+  }
+
+  function getCurrentResolvedTheme(): TResolvedTheme {
+    if (typeof document === "undefined") return resolveTheme(defaultTheme);
+
+    const { resolvedTheme } = document.documentElement.dataset;
+    return typeof resolvedTheme === "string" && isResolvedTheme(resolvedTheme)
+      ? resolvedTheme
+      : resolveTheme(getCurrentSelectedTheme());
+  }
+
+  function persistSelectedTheme(theme: TSelectableTheme) {
+    if (typeof document === "undefined") return;
+
+    if (persistTheme) {
+      void persistTheme(theme);
+    } else {
+      void setThemeServerFn({
+        data: { storageKey, value: theme },
+      });
     }
-
-    applyTheme(selectedTheme);
   }
 
   function setTheme(theme: TSelectableTheme) {
     const selectedTheme = parseTheme(theme);
     hydrateTheme(selectedTheme);
-
-    if (typeof document !== "undefined") {
-      if (persistTheme) {
-        void persistTheme(selectedTheme);
-      } else {
-        void setThemeServerFn({
-          data: { storageKey, value: selectedTheme },
-        });
-      }
-    }
+    persistSelectedTheme(selectedTheme);
   }
 
   function getThemeInitScript(theme: TSelectableTheme): string {
@@ -337,48 +344,56 @@ export function createTheme<
 
   function ThemeProvider({
     children,
-    syncSystemPreference = true,
     theme,
   }: PropsWithChildren<{
     syncSystemPreference?: boolean;
     theme: TSelectableTheme;
   }>) {
-    useIsomorphicLayoutEffect(() => {
-      hydrateTheme(theme);
-    }, [theme]);
+    const [themeState, setThemeState] = useState<
+      ThemeStoreState<TSelectableTheme, TResolvedTheme>
+    >(() => {
+      const selectedTheme = parseTheme(theme);
+      const resolvedTheme =
+        typeof document === "undefined"
+          ? resolveTheme(selectedTheme)
+          : getCurrentSelectedTheme() === selectedTheme
+            ? getCurrentResolvedTheme()
+            : resolveTheme(selectedTheme);
 
-    useEffect(() => {
-      if (
-        !syncSystemPreference ||
-        themeStore.state.theme !== systemPreference
-      ) {
-        return;
-      }
+      return { resolvedTheme, theme: selectedTheme };
+    });
 
-      const mediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)");
-      if (!mediaQuery) return;
+    const setThemeForContext = useCallback((nextTheme: TSelectableTheme) => {
+      const selectedTheme = parseTheme(nextTheme);
+      const resolvedTheme = resolveTheme(selectedTheme);
 
-      const handleChange = () => {
-        if (themeStore.state.theme === systemPreference) {
-          hydrateTheme(systemPreference);
-        }
-      };
+      setThemeState({ resolvedTheme, theme: selectedTheme });
+      applyTheme(selectedTheme);
+      persistSelectedTheme(selectedTheme);
+    }, []);
 
-      mediaQuery.addEventListener("change", handleChange);
-      return () => mediaQuery.removeEventListener("change", handleChange);
-    }, [syncSystemPreference, theme]);
-
-    return children;
+    return createElement(
+      ThemeContext.Provider,
+      {
+        value: {
+          resolvedTheme: themeState.resolvedTheme,
+          setTheme: setThemeForContext,
+          theme: themeState.theme,
+        },
+      },
+      children
+    );
   }
 
   function useTheme() {
-    const theme = useSelector(themeStore, (state) => state.theme);
-    const resolvedTheme = useSelector(
-      themeStore,
-      (state) => state.resolvedTheme
-    );
+    const context = useContext(ThemeContext);
+    if (context) return context;
 
-    return { resolvedTheme, setTheme, theme };
+    return {
+      resolvedTheme: defaultResolvedTheme,
+      setTheme,
+      theme: defaultTheme,
+    };
   }
 
   return {
@@ -399,7 +414,12 @@ export function createTheme<
     setTheme,
     systemPreference,
     themeConditions,
-    themeStore,
+    themeStore: {
+      getState: () => ({
+        resolvedTheme: defaultResolvedTheme,
+        theme: defaultTheme,
+      }),
+    },
     themes,
     ThemeInitScript,
     ThemeProvider,

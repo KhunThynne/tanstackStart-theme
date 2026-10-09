@@ -4,37 +4,20 @@ This module is a source-distribution theme helper for TanStack Start. It is desi
 
 ## Core idea
 
-A theme is a CSS class name applied to `<html>`.
+A theme is the user's selected preference applied to `<html>`. Real CSS themes are the concrete classes in `themes` (for example `light` and `dark`). The optional `systemPreference` key (default: `system`) means "follow the browser/device color scheme".
 
-The theme controller does **not** resolve `system` into `light` or `dark`. If the current theme is `system`, the document should look like this:
+For Tailwind/shadcn compatibility, `system` is kept as the selected preference while the resolved concrete theme is also applied:
 
 ```html
-<html class="system" data-theme="system"></html>
+<html class="system dark" data-theme="system" data-resolved-theme="dark"></html>
 ```
 
-CSS owns what each class means:
+This lets app CSS target both concepts:
 
-```css
-html.light {
-  color-scheme: light;
-}
+- `data-theme` / the `system` class = the selected preference
+- `data-resolved-theme` / the `light` or `dark` class = the concrete visual theme used by Tailwind/shadcn selectors
 
-html.dark {
-  color-scheme: dark;
-}
-
-html.system {
-  color-scheme: light dark;
-}
-
-@media (prefers-color-scheme: dark) {
-  html.system {
-    /* dark tokens for system mode */
-  }
-}
-```
-
-This keeps JavaScript responsible only for state, cookie persistence, and applying the selected class. Visual resolution stays in CSS.
+JavaScript resolves `system` only to choose the concrete DOM class and `color-scheme`; the selected preference remains `system` for UI state and persistence.
 
 ## Tailwind/CSS conditions
 
@@ -43,7 +26,8 @@ The controller exposes `themeConditions` and `createThemeConditions(themes)` so 
 ```ts
 const appTheme = createTheme({
   defaultTheme: "system",
-  themes: ["light", "dark", "system"],
+  themes: ["light", "dark"],
+  systemPreference: "system",
 });
 
 console.log(appTheme.themeConditions);
@@ -89,7 +73,8 @@ The package source lives in `src/`. The app-facing adapter outside `src/` create
 ```ts
 const appTheme = createTheme({
   defaultTheme: "system",
-  themes: ["light", "dark", "system"],
+  themes: ["light", "dark"],
+  systemPreference: "system",
 });
 
 export const { ThemeProvider, useTheme, setTheme, hydrateTheme } = appTheme;
@@ -112,29 +97,32 @@ return {
 };
 ```
 
-### 2. Root document renders the theme class directly
+### 2. Root document installs the pre-hydration DOM script
 
 ```tsx
 function RootDocument() {
   const { theme } = Route.useRouteContext();
 
   return (
-    <html className={theme} data-theme={theme} suppressHydrationWarning>
+    <html suppressHydrationWarning>
+      <head>
+        <ThemeInitScript theme={theme} />
+      </head>
       {/* ... */}
     </html>
   );
 }
 ```
 
-### 3. React provider syncs the UI store from router context
+`ThemeInitScript` should be placed in `<head>` when possible. It updates `document.documentElement` before React hydrates, which prevents light/dark flash. It only touches DOM classes/data attributes; it does not and cannot initialize React context or store state.
+
+### 3. React provider owns `useTheme()` state from router context
 
 ```tsx
 <ThemeProvider theme={context.theme}>{children}</ThemeProvider>
 ```
 
-This avoids the older singleton-store-first flow where route hydration had to push cookie state into a global store manually. The router context is the initial source of truth, and the provider bridges it into `useTheme()` for UI controls.
-
-`ThemeProvider` syncs with an isomorphic layout effect and calls `hydrateTheme()`, not `setTheme()`. That keeps server/router state from writing back to the cookie and prevents the client singleton store from becoming the initial source of truth.
+`ThemeProvider` initializes React Context state from `context.theme` during its first render. `useTheme()` reads that context directly, so it does not see a module default before the provider value. No `useEffect`, route `beforeLoad`, or router `hydrate` call is required for the initial React theme state.
 
 ## UI usage
 
@@ -142,12 +130,13 @@ This avoids the older singleton-store-first flow where route hydration had to pu
 const { theme, setTheme } = useTheme();
 ```
 
-- `theme` is the selected class name, e.g. `light`, `dark`, or `system`.
-- `setTheme(nextTheme)` updates the store, applies the class to `<html>`, and persists the cookie through the configured server function.
+- `theme` is the selected preference, e.g. `light`, `dark`, or `system`.
+- `resolvedTheme` is the concrete visual theme, e.g. `light` or `dark`.
+- `setTheme(nextTheme)` updates React Context state, applies the selected/resolved classes to `<html>`, and persists the cookie through the configured server function.
 
 ## Notes
 
 - This is a source package for TanStack Start/Vite consumers. It intentionally exports `.ts`/`.tsx` source and lets the consuming repo compile it during its own production build. There is no package-level `dist` build step by default.
-- `hydrateTheme(theme)` is still exposed for advanced lifecycle/manual sync, but normal app usage should prefer `<ThemeProvider theme={context.theme}>`.
-- `style.colorScheme` is set only for `light` and `dark`. Other theme names leave color-scheme to CSS.
+- `hydrateTheme(theme)` is still exposed for advanced/manual DOM synchronization, but normal app usage should prefer `<ThemeInitScript theme={context.theme}>` plus `<ThemeProvider theme={context.theme}>`.
+- `style.colorScheme` is set from the resolved theme when it is `light` or `dark`.
 - Components are intentionally not part of the package build. Consumers should build their own UI around `useTheme()`.
