@@ -21,7 +21,7 @@ Read this before changing files in this package or its app adapter.
 - `src/server.ts` — default TanStack Start cookie read/write server functions.
 - `src/schema.ts` — safe theme token validation for persisted/user-provided values.
 - `src/type.ts` — shared theme types.
-- root `index.ts` — HaanHarn app-facing theme instance and public exports.
+- root `index.ts` — consumer app-facing theme instance and public exports.
 - root `components.tsx` / `ThemeToggle.tsx` — app-facing controls; keep generic factory code out of these.
 - `docs/release/` — release-note markdown for GitHub releases.
 
@@ -91,7 +91,7 @@ approach.
   peer dependencies merely to test this source tree. Prefer the consumer/repository's
   existing engine and dev tooling.
 - Do not add or edit shared UI primitives from `package/components/ui/` from here.
-- Do not introduce HaanHarn-specific theme names inside `createTheme()`; app-specific names belong in the root adapter instance.
+- Do not introduce consumer-specific theme names inside `createTheme()`; app-specific names belong in the root adapter instance.
 - Keep `parseTheme()` / `isTheme()` as the runtime guard for raw cookie, server, or URL values.
 - Keep user actions in `useTheme().setTheme()`: update React Context state, apply DOM classes/data attributes, then persist.
 - Do not call the persistence server function while reading router/server context.
